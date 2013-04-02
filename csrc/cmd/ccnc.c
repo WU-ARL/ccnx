@@ -33,6 +33,7 @@
     " -h - help"                                                         "\n" \
     " -d - debug mode - no input editing"                                "\n" \
     " -i n - print n bytes of signer's public key digest in hex"         "\n" \
+    " -l label - print this label before your text "                     "\n" \
     " -n - no echo of own output"                                        "\n" \
     " -q - no automatic greeting or farwell"                             "\n" \
     " -r command - hook up to input and output of responder command"     "\n" \
@@ -76,6 +77,7 @@ struct ccnxchat_state {
     struct ccn_charbuf *payload; /* Buffer for payload */
     struct ccn_charbuf *lineout; /* For building output line */
     struct ccn_charbuf *luser;   /* user's name */
+    struct ccn_charbuf *label;   /* user's label to be printed before their text */
     /* The following buffers contain ccnb-encoded data */
     struct ccn_charbuf *basename; /* The namespace we are serving */
     struct ccn_charbuf *name;   /* Buffer for constructed name */
@@ -131,6 +133,7 @@ static void express_interest(struct ccnxchat_state *);
 static void init_ver_exclusion(struct ccnxchat_state *);
 static void prune_oldest_exclusion(struct ccnxchat_state *);
 static int append_full_user_name(struct ccn_charbuf *);
+static int append_user_label(struct ccn_charbuf *);
 
 /* Very simple error handling */
 #define FATAL(res) fatal(__LINE__, res)
@@ -178,6 +181,8 @@ chat_main(int argc, char **argv)
     st->lineout = ccn_charbuf_create();
     st->luser = ccn_charbuf_create();
     append_full_user_name(st->luser);
+    st->label = ccn_charbuf_create();
+    append_user_label(st->label);
     init_ver_exclusion(st);
     /* Set up a handler for interests */
     res = ccn_set_interest_filter(h, st->basename, &in_interest);
@@ -186,6 +191,9 @@ chat_main(int argc, char **argv)
     debug_logger(st, __LINE__, st->basename);
     st->prefer_newest = 1;
     express_interest(st);
+//ccn_charbuf_append_charbuf(st->payload, st->luser);
+ccn_charbuf_append_charbuf(st->payload, st->label);
+ccn_charbuf_putf(st->payload, ": ");
     /* Run the event loop */
     for (;;) {
         res = -1;
@@ -555,7 +563,7 @@ read_input(struct ccnxchat_state *st)
         else if (res == 0) {
             if (st->eof == 0 && st->quiet == 0) {
                 ccn_charbuf_putf(st->payload, "=== ");
-                ccn_charbuf_append_charbuf(st->payload, st->luser);
+                //ccn_charbuf_append_charbuf(st->payload, st->luser);
                 ccn_charbuf_putf(st->payload, " leaving chat");
                 st->freshness = 1;
             }
@@ -580,6 +588,9 @@ generate_new_data(struct ccnxchat_state *st)
         if (st->echo == 0)
             add_cob_exclusion(st, st->cob);
         ccn_charbuf_reset(st->payload);
+//ccn_charbuf_append_charbuf(st->payload, st->luser);
+ccn_charbuf_append_charbuf(st->payload, st->label);
+ccn_charbuf_putf(st->payload, ": ");
         st->ready = 0;
     }
 }
@@ -779,6 +790,7 @@ static struct {
     int verbose;
     const char *basename;
     const char *responder;
+    const char *label;
 } option;
 
 static void
@@ -793,7 +805,7 @@ parseopts(int argc, char **argv)
     option.verbose = 0;
     option.quiet = 0;
     option.freshness = 30 * 60;
-    while ((opt = getopt(argc, argv, "hdi:nqr:vx:")) != -1) {
+    while ((opt = getopt(argc, argv, "hdi:l:nqr:vx:")) != -1) {
         switch (opt) {
             case 'd':
                 option.debug = 1;
@@ -802,6 +814,9 @@ parseopts(int argc, char **argv)
                 option.robotname = atoi(optarg);
                 if (option.robotname < 0 || option.robotname > 32)
                     usage();
+                break;
+            case 'l':
+                option.label = optarg;
                 break;
             case 'n':
                 option.echo = 0;
@@ -1021,6 +1036,18 @@ append_full_user_name(struct ccn_charbuf *c)
         ccn_charbuf_putf(c, "%s", pwd->pw_gecos);
     }
 #endif
+    return(res);
+}
+
+static int
+append_user_label(struct ccn_charbuf *c)
+{
+    int res = -1;
+    res = 0;
+    if (option.label != NULL) {
+      ccn_charbuf_putf(c, "%s", option.label);
+      res = 0;
+    }
     return(res);
 }
 
