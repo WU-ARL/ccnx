@@ -587,7 +587,7 @@ ccnd_generate_face_guid(struct ccnd_handle *h, struct face *face, int size,
             range = ~0;
         else {
             range = 0;
-            for (i = i; i < size; i++)
+            for (; i < size; i++)
                 range = (range << 8) + hi[i] - lo[i];
         }
         if (range < 2)
@@ -645,6 +645,8 @@ finalize_face(struct hashtb_enumerator *e)
         }
         for (c = 0; c < CCN_CQ_N; c++)
             content_queue_destroy(h, &(face->q[c]));
+        ccn_charbuf_destroy(&face->inbuf);
+        ccn_charbuf_destroy(&face->outbuf);
         ccnd_msg(h, "%s face id %u (slot %u)",
             recycle ? "recycling" : "releasing",
             face->faceid, face->faceid & MAXFACES);
@@ -3420,13 +3422,13 @@ ie_next_usec(struct ccnd_handle *h, struct interest_entry *ie,
     ccn_wrappedtime mn;
     int ans;
     int debug = (h->debug & 32) != 0;
-    const int horizon = 3 * WTHZ; /* complain if we get behind by too much */
+    const int horizon = 6 * WTHZ; /* complain if we get behind by too much */
     
     base = h->wtnow - horizon;
     mn = 600 * WTHZ + horizon;
     for (p = ie->pfl; p != NULL; p = p->next) {
         delta = p->expiry - base;
-        if (delta >= 0x80000000)
+        if (delta >= 0x80000000 && (h->debug & 2) != 0)
             debug = 1;
         if (debug) {
             static const char fmt_ie_next_usec[] = 
@@ -4380,13 +4382,10 @@ process_incoming_interest(struct ccnd_handle *h, struct face *face,
         }
         if (h->debug & 16) {
             /* Only print details that are not already presented */
-            // ZZZZ - should do nifty Exclude presentation here
             ccnd_msg(h,
                      "version: %d, "
-                     "excl: %d bytes, "
                      "etc: %d bytes",
                      pi->magic,
-                     pi->offset[CCN_PI_E_Exclude] - pi->offset[CCN_PI_B_Exclude],
                      pi->offset[CCN_PI_E_OTHER] - pi->offset[CCN_PI_B_OTHER]);
         }
         s_ok = (pi->answerfrom & CCN_AOK_STALE) != 0;
@@ -5995,8 +5994,13 @@ ccnd_destroy(struct ccnd_handle **pccnd)
     ccn_indexbuf_destroy(&h->scratch_indexbuf);
     ccn_indexbuf_destroy(&h->unsol);
     if (h->face0 != NULL) {
+        int i;
         ccn_charbuf_destroy(&h->face0->inbuf);
         ccn_charbuf_destroy(&h->face0->outbuf);
+        for (i = 0; i < CCN_CQ_N; i++)
+            content_queue_destroy(h, &(h->face0->q[i]));
+        for (i = 0; i < CCND_FACE_METER_N; i++)
+            ccnd_meter_destroy(&h->face0->meter[i]);
         free(h->face0);
         h->face0 = NULL;
     }

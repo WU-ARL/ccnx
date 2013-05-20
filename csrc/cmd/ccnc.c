@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012 Palo Alto Research Center, Inc.
+ * Copyright (C) 2012-2013 Palo Alto Research Center, Inc.
  *
  * This work is free software; you can redistribute it and/or modify it under
  * the terms of the GNU General Public License version 2 as published by the
@@ -35,7 +35,7 @@
     " -i n - print n bytes of signer's public key digest in hex"         "\n" \
     " -l label - print this label before your text "                     "\n" \
     " -n - no echo of own output"                                        "\n" \
-    " -q - no automatic greeting or farwell"                             "\n" \
+    " -q - no automatic greeting or farewell"                            "\n" \
     " -r command - hook up to input and output of responder command"     "\n" \
     " -v - verbose trace of what is happening"                           "\n" \
     " -x sec - set freshness"
@@ -88,7 +88,7 @@ struct ccnxchat_state {
     int prefer_newest;          /* for saner startup */
     int echo;                   /* to see own output */
     int freshness;              /* to set FreshnessSeconds */
-    int quiet;                  /* no automatic greeting or farwell */
+    int quiet;                  /* no automatic greeting or farewell */
     int robotname;              /* print n bytes of robot name */
     int verbose;                /* to turn on debugging output */
 };
@@ -105,7 +105,6 @@ static void initialize(struct ccnxchat_state *st, struct ccn_charbuf *);
 struct ccn_charbuf *adjust_regprefix(struct ccn_charbuf *);
 static int namecompare(const void *, const void *);
 static void stampnow(struct ccn_charbuf *);
-static void seed_random(void);
 static void usage(void);
 unsigned short wrappednow(void);
 
@@ -149,7 +148,6 @@ chat_main(int argc, char **argv)
 {
     struct ccn *h = NULL;
     struct ccn_charbuf *name = NULL;
-    struct ccn_charbuf *cob = NULL;
     struct ccn_closure in_interest = {0};
     struct ccn_closure in_content = {0};
     struct ccnxchat_state state = {0};
@@ -160,7 +158,6 @@ chat_main(int argc, char **argv)
     st = &state;
     name = ccn_charbuf_create();
     initialize(st, name);
-    cob = ccn_charbuf_create();
     /* Connect to ccnd */
     h = ccn_create();
     if (ccn_connect(h, NULL) == -1)
@@ -253,6 +250,16 @@ incoming_interest(struct ccn_closure *selfp,
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
+/**
+ *  Handle an arriving content object or interest timeout
+ *
+ * In the case where an arriving object has been verified, we will
+ * display it, add its version to the exclude list (so we don't see it again),
+ * and cause ccn_run to return soon so that a new interest can be sent.
+ *
+ * When an interest times out, we trim the exclusion list before returning to
+ * the main event loop.
+ */
 static enum ccn_upcall_res
 incoming_content(struct ccn_closure *selfp,
                   enum ccn_upcall_kind kind,
@@ -286,6 +293,8 @@ incoming_content(struct ccn_closure *selfp,
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
+
+/** Display the content payload, optionally with abbreviated publisher id */
 static void
 display_the_content(struct ccnxchat_state *st, struct ccn_upcall_info *info)
 {
@@ -328,6 +337,8 @@ display_the_content(struct ccnxchat_state *st, struct ccn_upcall_info *info)
 }
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+/** Insert an entry into our list of excluded versions */
 static void
 add_ver_exclusion(struct ccnxchat_state *st, struct ccn_charbuf **c)
 {
@@ -360,6 +371,7 @@ add_ver_exclusion(struct ccnxchat_state *st, struct ccn_charbuf **c)
     *c = NULL;
 }
 
+/** Remove the oldest excluded version from our list, if appropriate */
 static void
 prune_oldest_exclusion(struct ccnxchat_state *st)
 {
@@ -373,6 +385,7 @@ prune_oldest_exclusion(struct ccnxchat_state *st)
     st->n_ver--;
 }
 
+/** Add an exclusion for the specific version of the new content object */
 static void
 add_info_exclusion(struct ccnxchat_state *st, struct ccn_upcall_info *info)
 {
@@ -395,6 +408,7 @@ add_info_exclusion(struct ccnxchat_state *st, struct ccn_upcall_info *info)
     ccn_charbuf_destroy(&c);
 }
 
+/** Add an exclusion for a version expressed in URI form */
 static void
 add_uri_exclusion(struct ccnxchat_state *st, const char *uri)
 {
@@ -405,6 +419,7 @@ add_uri_exclusion(struct ccnxchat_state *st, const char *uri)
     ccn_charbuf_destroy(&c);
 }
 
+/** Add an exclusion for the specific version of the given content object */
 static void
 add_cob_exclusion(struct ccnxchat_state *st, struct ccn_charbuf *cob)
 {
@@ -435,6 +450,7 @@ add_cob_exclusion(struct ccnxchat_state *st, struct ccn_charbuf *cob)
     ccn_charbuf_destroy(&c);
 }
 
+/** Initialize the ver table with the bounds for legitimate versions */
 static void
 init_ver_exclusion(struct ccnxchat_state *st)
 {    
@@ -442,6 +458,7 @@ init_ver_exclusion(struct ccnxchat_state *st)
     add_uri_exclusion(st, "/%FD%00%FF%FF%FF%FF%FF");
 }
 
+/** Express an interest excluding everything in our exclude list */
 static void
 express_interest(struct ccnxchat_state *st)
 {
@@ -762,12 +779,12 @@ age_pit(struct ccnxchat_state *st)
 }
 
 /**
- * Comparison operator for sorting the excl list with qsort.
+ * Comparison operator for sorting the exclusions.
  * For convenience, the items in the excl array are
  * charbufs containing ccnb-encoded Names of one component each.
  * (This is not the most efficient representation.)
  */
-static int /* for qsort */
+static int
 namecompare(const void *a, const void *b)
 {
     const struct ccn_charbuf *aa = *(const struct ccn_charbuf **)a;
@@ -793,6 +810,7 @@ static struct {
     const char *label;
 } option;
 
+/** Parse ccnc command-line options */
 static void
 parseopts(int argc, char **argv)
 {
@@ -864,7 +882,6 @@ initialize(struct ccnxchat_state *st, struct ccn_charbuf *basename)
     st->verbose = option.verbose;
     st->robotname = option.robotname;
     st->quiet = option.quiet;
-    seed_random();
 }
 
 /** Return a newly-allocated Name buffer with one Component chopped off */
@@ -922,16 +939,6 @@ wrappednow(void)
     return(now);
 }
 
-/** Seed the pseudo-random numbers */
-static void
-seed_random(void)
-{
-    struct timeval tv;
-    
-    gettimeofday(&tv, NULL);
-    srandom(getpid() * 31415 + tv.tv_sec + tv.tv_usec);
-}
-
 /**
  * Debugging aid
  *
@@ -961,6 +968,7 @@ debug_logger(struct ccnxchat_state *st, int lineno, struct ccn_charbuf *ccnb)
     ccn_charbuf_destroy(&c);
 }
 
+/** Append the details of the interest, expecially the excludes */
 static int
 append_interest_details(struct ccn_charbuf *c,
                         const unsigned char *ccnb, size_t size)
@@ -1024,6 +1032,7 @@ append_interest_details(struct ccn_charbuf *c,
     return(0);
 }
 
+/** Append the name of the user, if we have access to it */
 static int
 append_full_user_name(struct ccn_charbuf *c)
 {
@@ -1096,6 +1105,11 @@ robo_chat(int argc, char **argv)
     return(chat_main(argc, argv));
 }
 
+/** 
+ *  Main entry point for chat.
+ *
+ * This takes care of starting the line editor front end, if desired.
+ */
 int
 main(int argc, char **argv)
 {
